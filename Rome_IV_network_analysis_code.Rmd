@@ -1,0 +1,1038 @@
+
+---
+#Aim 1: Global Symptom Network 
+
+#Goldbricker analyses
+```{r cars}
+library(networktools)
+#Load data and assign it to "data" object
+data <- GlobalEpi_Master_EGBARomeDx_EXCL
+data <- GlobalEpi_Master_EGBARomeDx_EXCL[,c(2:37)]
+
+#run GB function. Change p-value and threshhold as needed. For larger datasets, smaller p-value 
+#and larger threshhold makes sense to avoid very large number of redundant pairs. 
+my_gb <- goldbricker(data, p = 0.0001, method = "hittner2003", threshold = 0.25,
+                       progressbar = TRUE)
+print(my_gb)
+
+#GB will combine both variables from each bad pair (create a compoisit) and save the new file
+reduced_PCA <- net_reduce(data=data, badpairs=my_gb, method="PCA")
+print(reduced_PCA)
+write.csv(reduced_PCA, "reduced_PCA.csv")
+write_rds(reduced_PCA, "GlobalEpi_Master_EGBARomeDx_EXCL_GB.rds")
+
+#GB will remove one of the variable from each bad pair and save the new file 
+reduced_bestgb <- net_reduce(data=data, badpairs=gb_ADAA, method="best_goldbricker")
+print(reduced_bestgb)
+write.csv(reduced_bestgb, "reduced_bestgb.csv")
+```
+
+#Global Symptom Network 
+```{r pressure, echo=FALSE}
+#load required packages
+library(bootnet) 
+library(networktools)
+library(NetworkComparisonTest)
+library(qgraph)
+library(dplyr)
+library(tidyverse)
+
+#Load data and assign it to "data" object
+data <- GlobalEpi_Master_EGBARomeDx_EXCL_GB
+View(data)
+
+data <- rename(data, Globus=R1, Odynophagia=R4, ChestPain=R5, ChestBurn=R7, ChestPainDysphag=R8, 
+               Heartburn=R9, Dysphagia=R12, PostFull=R14, EarlySat=R16, EpigasPain=R18, EpigasPainBM=R19,
+               Nausea=R21, Vomit=R23, Regurg=R32, RegurgTaste=R37, Belching=R38, AbdPain=R40, PainBM=R41, PainStoolConsist=R42,
+               PainStoolFreq=R43, PainEating=R45, PainImpair=R46, "BSS1-2"=R49, Constip=R51, StrainBM=R52,
+               IncompleteBM=R53, StoolBlock=R54, StoolManip=R55, "BSS6-7"=R59, DiarrEat=R61, Urgency=R63,
+               Bloat=R65, Incont=R80, RectPain=R83, RegurgRetchVomit=PCA.R35.R34)
+
+
+#Estimate network using Spearman correlation
+mynetwork <- estimateNetwork(data, default="EBICglasso", corMethod = "cor", corArgs =
+                              list(method = "spearman", use = "pairwise.complete.obs"))
+View(data)
+#Plot network
+myplot <- plot(mynetwork, layout="spring", vsize=6, color="lightblue", border.color="black", legend=FALSE)
+
+#Save plot as pdf
+setwd("C:/Users/u0140676/Dropbox/Rome Epi Study Network Analysis/Analyses/1.1 Esophageal") #set directory for where to save file
+pdf("Overall Network_Labeled.pdf")
+myplot <- plot(mynetwork,layout="spring", vsize=6, color="lightblue", border.color="black", legend=FALSE)
+dev.off()
+
+#Create centrality plot (will show strength centrality)
+pdf("CentralityPlot.pdf",width=4)
+c1 <- centralityPlot(myplot)
+dev.off()
+
+#Expected influence plot
+pdf("ExpectedInfluencePlot.pdf", width=4)
+C2 <- centralityPlot(myplot, include = "ExpectedInfluence")
+dev.off()
+
+#Save centrality values
+CentralityTable <- centralityTable(mynetwork)
+write.csv(CentralityTable, "MyCentralityTable.csv")
+
+#Constructing a partial correlation matrix and getting edge values
+N1edges <-getWmat(mynetwork)
+write.csv(N1edges, "NetworkEdges.csv")
+
+#Estimating Network Stability
+#Use nCores = 4 for a regular computer. Only use over 4 if your computer has enough cores to support it. 
+b1 <- bootnet(mynetwork, boots=1000,nCores=12, statistics=c("strength", "expectedInfluence", "edge"))
+b2 <- bootnet(mynetwork, boots=1000,nCores=12, type="case", statistics=c("strength", "expectedInfluence", "edge"))
+
+#Save bootstrapped files
+save(b1, file = "b1.Rdata")
+save(b2, file = "b2.Rdata")
+
+#load bootstrapped files from saved files
+setwd("C:/Users/lapab/Dropbox/Rome Epi Study Network Analysis/Analyses/1. Central across all")
+load("b1.Rdata")
+load("b2.Rdata")
+
+#Get centrality stability coefficients
+corStability(b2) 
+
+#Save edge stability graph
+pdf("EdgeStability.pdf")
+plot(b1, labels = FALSE, order = "sample") 
+dev.off()
+
+#Save centrality stability graph
+pdf("CentrStability.pdf") 
+plot(b2)
+dev.off()
+
+# Save Strength Centrality difference test
+pdf("CentralityDifference_names.pdf")
+plot(b1, "strength", order="sample", labels=TRUE) 
+dev.off()
+
+# Save EI difference test
+pdf("EIDifference.pdf")
+plot(b1, "expectedInfluence", order="sample", labels=TRUE) 
+dev.off()
+
+#Save Edge weights diff test
+pdf("Difftest.pdf")
+plot(b1, "edge", plot = "difference", onlyNonZero = TRUE, order = "sample")
+dev.off()
+```
+
+#DGBI Category Networks
+
+#Esophageal network
+```{r}
+#Load data and assign it to "data" object
+load("GlobalEpi_Master_EGBARomeDx_EXCL.Rdata")
+data <- GlobalEpi_Master_EGBARomeDx_EXCL
+View(data)
+
+#Variables to exclude: all but esophageal columns
+data <- GlobalEpi_Master_EGBARomeDx_EXCL[,c(2:8)]
+
+data <- rename(data, Globus=R1, Odynophagia=R4, ChestPain=R5, ChestBurn=R7, ChestPainDysphag=R8, 
+               Heartburn=R9, Dysphagia=R12)
+
+#Assign names to node
+mynames <-c("Globus",	"Odynophagia",	"ChestPain",	"ChestBurn", "ChestPainDysphag", 
+            "Heartburn", "Dysphagia")
+
+#Estimate network using Spearman correlation
+mynetwork <- estimateNetwork(data, default="EBICglasso", corMethod = "cor", corArgs =
+                              list(method = "spearman", use = "pairwise.complete.obs"))
+
+#Plot network
+#Use labels = mynames to have names displayed on the graph
+myplot <- plot(mynetwork, labels=mynames, layout="spring", vsize=6, color="lightblue", border.color="black", legend=FALSE)
+
+#Save plot as pdf
+setwd("C:/Users/u0140676/Dropbox/Rome Epi Study Network Analysis/Analyses/1.1 Esophageal") #set directory for where to save file
+pdf("Network_Esophageal_Labeled.pdf")
+myplot <- plot(mynetwork, labels=mynames,layout="spring", vsize=6, color="lightblue", border.color="black", legend=FALSE)
+dev.off()
+
+#Create centrality plot (will show strength centrality)
+pdf("CentralityPlot_Esophageal.pdf",width=4)
+c1 <- centralityPlot(myplot)
+dev.off()
+
+#Expected influence plot
+pdf("ExpectedInfluencePlot_Esophageal.pdf", width=4)
+C2 <- centralityPlot(myplot, include = "ExpectedInfluence")
+dev.off()
+
+#Save centrality values
+CentralityTable <- centralityTable(mynetwork)
+write.csv(CentralityTable, "MyCentralityTable_Esophageal.csv")
+
+#Constructing a partial correlation matrix and getting edge values
+N1edges <-getWmat(mynetwork)
+write.csv(N1edges, "NetworkEdges_Esophageal.csv")
+
+#Estimating Network Stability
+#Use nCores = 4 for a regular computer. Only use over 4 if your computer has enough cores to support it. 
+b1 <- bootnet(mynetwork, boots=1000,nCores=12, statistics=c("strength", "expectedInfluence", "edge"))
+b2 <- bootnet(mynetwork, boots=1000,nCores=12, type="case", statistics=c("strength", "expectedInfluence", "edge"))
+
+#Save bootstrapped files
+save(b1, file = "b1.Rdata")
+save(b2, file = "b2.Rdata")
+
+#load bootstrapped files from saved files
+setwd("C:/Users/u0140676/OneDrive - KU Leuven/Documents/Projects/Rome Epi Network Analysis/Analysis")
+load("b1.Rdata")
+load("b2.Rdata")
+
+#Get centrality stability coefficients
+corStability(b2) 
+
+#Save edge stability graph
+pdf("EdgeStability_Esophageal.pdf")
+plot(b1, labels = FALSE, order = "sample") 
+dev.off()
+```
+
+#Gastroduodenal network
+```{r}
+#Load data and assign it to "data" object
+load("GlobalEpi_Master_EGBARomeDx_EXCL.Rdata")
+data <- GlobalEpi_Master_EGBARomeDx_EXCL
+View(data)
+
+#Variables to exclude: ID
+data <- GlobalEpi_Master_EGBARomeDx_EXCL[,9:19]
+
+data <- rename(data, PostFull=R14, EarlySat=R16, EpigasPain=R18, EpigasPainBM=R19,
+               Nausea=R21, Vomit=R23, Regurg=R32, RegurgRetch=R34, RegurgVomit=R35, RegurgTaste=R37, Belching=R38)
+
+#Assign names to node
+mynames <-c("PostFull", "EarlySat", "EpigasPain",
+"EpigasPainBM", "Nausea", "Vomit", "Regurg", "RegurgRetch",
+"RegurgVomit", "RegurgTaste", "Belching")
+
+#Estimate network using Spearman correlation
+mynetwork <- estimateNetwork(data, default="EBICglasso", corMethod = "cor", corArgs =
+                              list(method = "spearman", use = "pairwise.complete.obs"))
+
+#Plot network
+#Use labels = mynames to have names displayed on the graph
+myplot <- plot(mynetwork, labels=mynames, layout="spring", vsize=6, color="lightblue", border.color="black", legend=FALSE)
+
+#Save plot as pdf
+setwd("C:/Users/u0140676/Dropbox/Rome Epi Study Network Analysis/Analyses/1.1 Esophageal") #set directory for where to save file
+pdf("Network_Gastroduodenal_Labeled.pdf")
+myplot <- plot(mynetwork, labels=mynames,layout="spring", vsize=6, color="lightblue", border.color="black", legend=FALSE)
+dev.off()
+
+#Create centrality plot (will show strength centrality)
+pdf("CentralityPlot_Gastroduodenal.pdf",width=4)
+c1 <- centralityPlot(myplot)
+dev.off()
+
+#Expected influence plot
+pdf("ExpectedInfluencePlot_Gastroduodenal.pdf", width=4)
+C2 <- centralityPlot(myplot, include = "ExpectedInfluence")
+dev.off()
+
+#Save centrality values
+CentralityTable <- centralityTable(mynetwork)
+write.csv(CentralityTable, "MyCentralityTable_Gastroduodenal.csv")
+
+#Constructing a partial correlation matrix and getting edge values
+N1edges <-getWmat(mynetwork)
+write.csv(N1edges, "NetworkEdges_Gastroduodenal.csv")
+
+#Estimating Network Stability
+#Use nCores = 4 for a regular computer. Only use over 4 if your computer has enough cores to support it. 
+b1 <- bootnet(mynetwork, boots=1000,nCores=12, statistics=c("strength", "expectedInfluence", "edge"))
+b2 <- bootnet(mynetwork, boots=1000,nCores=12, type="case", statistics=c("strength", "expectedInfluence", "edge"))
+
+#Save bootstrapped files
+setwd("/Users/helenmurray/Dropbox (Partners Healthcare)/Rome Epi Study Network Analysis/Analyses/1.2 Gastroduodenal") #set directory for where to retrieve and save files
+save(b1, file = "b1_Gastroduodenal.Rdata")
+save(b2, file = "b2_Gastroduodenal.Rdata")
+
+#load bootstrapped files from saved files 
+load("b1_Gastroduodenal.Rdata")
+load("b2_Gastroduodenal.Rdata")
+
+#Get centrality stability coefficients
+corStability(b2) 
+
+#Save edge stability graph
+pdf("EdgeStability_Gastroduodenal.pdf")
+plot(b1, labels = FALSE, order = "sample") 
+dev.off()
+
+#Save centrality stability graph
+pdf("CentrStability_Gastroduodenal.pdf") 
+plot(b2)
+dev.off()
+
+# Save Strength Centrality difference test
+pdf("CentraityDifference_Gastroduodenal.pdf")
+plot(b1, "strength", order="sample", labels=TRUE) 
+dev.off()
+
+# Save EI difference test
+pdf("EIDifference_Gastroduodenal.pdf")
+plot(b1, "expectedInfluence", order="sample", labels=TRUE) 
+dev.off()
+
+#Save Edge weights diff test
+pdf("Difftest_Gastroduodenal.pdf")
+plot(b1, "edge", plot = "difference", onlyNonZero = TRUE, order = "sample")
+dev.off()
+```
+
+#Bowel network
+```{r}
+#Variables to exclude: ID
+data <- GlobalEpi_Master_EGBARomeDx_EXCL[,20:35]
+View (data)
+
+data <- rename(data, AbdPain=R40, PainBM=R41, PainStoolConsist=R42,
+               PainStoolFreq=R43, PainEating=R45, PainImpair=R46, "BSS1-2"=R49, Constip=R51, StrainBM=R52,
+               IncompleteBM=R53, StoolBlock=R54, StoolManip=R55, "BSS6-7"=R59, DiarrEat=R61, Urgency=R63,
+               Bloat=R65)
+
+#Assign names to node
+mynames <-c("AbdPain", "PainBM",
+"PainStoolConsist", "PainStoolFreq", "PainEating", "PainImpair", "BSS1-2",
+"Constip", "StrainBM", "IncompleteBM", "StoolBlock", "StoolManip",
+"BSS6-7", "DiarrEat", "Urgency", "Bloat")
+
+#Estimate network using Spearman correlation
+mynetwork <- estimateNetwork(data, default="EBICglasso", corMethod = "cor", corArgs =
+                              list(method = "spearman", use = "pairwise.complete.obs"))
+
+#Plot network
+#Use labels = mynames to have names displayed on the graph
+myplot <- plot(mynetwork, labels=mynames, layout="spring", vsize=6, color="lightblue", border.color="black", legend=FALSE)
+
+#Save plot as pdf
+setwd("C:/Users/u0140676/Dropbox/Rome Epi Study Network Analysis/Analyses/1.1 Esophageal") #set directory for where to save file
+pdf("Network_Bowel_Labeled.pdf")
+myplot <- plot(mynetwork, labels=mynames,layout="spring", vsize=6, color="lightblue", border.color="black", legend=FALSE)
+dev.off()
+
+#Create centrality plot (will show strength centrality)
+pdf("CentralityPlot_Bowel.pdf",width=4)
+c1 <- centralityPlot(myplot)
+dev.off()
+
+#Expected influence plot
+pdf("ExpectedInfluencePlot_Bowel.pdf", width=4)
+C2 <- centralityPlot(myplot, include = "ExpectedInfluence")
+dev.off()
+
+#Save centrality values
+CentralityTable <- centralityTable(mynetwork)
+write.csv(CentralityTable, "MyCentralityTable_Bowel.csv")
+
+#Constructing a partial correlation matrix and getting edge values
+N1edges <-getWmat(mynetwork)
+write.csv(N1edges, "NetworkEdges_Bowel.csv")
+
+#Estimating Network Stability
+#Use nCores = 4 for a regular computer. Only use over 4 if your computer has enough cores to support it. 
+b1 <- bootnet(mynetwork, boots=1000,nCores=12, statistics=c("strength", "expectedInfluence", "edge"))
+b2 <- bootnet(mynetwork, boots=1000,nCores=12, type="case", statistics=c("strength", "expectedInfluence", "edge"))
+
+#Save bootstrapped files
+setwd("/Users/helenmurray/Dropbox (Partners Healthcare)/Rome Epi Study Network Analysis/Analyses/1.2 Bowel") #set directory for where to retrieve and save files
+save(b1, file = "b1_Bowel.Rdata")
+save(b2, file = "b2_Bowel.Rdata")
+
+#load bootstrapped files from saved files 
+load("b1_Bowel.Rdata")
+load("b2_Bowel.Rdata")
+
+#Get centrality stability coefficients
+corStability(b2) 
+
+#Save edge stability graph
+pdf("EdgeStability_Bowel.pdf")
+plot(b1, labels = FALSE, order = "sample") 
+dev.off()
+
+#Save centrality stability graph
+pdf("CentrStability_Bowel.pdf") 
+plot(b2)
+dev.off()
+
+# Save Strength Centrality difference test
+pdf("CentraityDifference_Bowel.pdf")
+plot(b1, "strength", order="sample", labels=TRUE) 
+dev.off()
+
+# Save EI difference test
+pdf("EIDifference_Bowel.pdf")
+plot(b1, "expectedInfluence", order="sample", labels=TRUE) 
+dev.off()
+
+#Save Edge weights diff test
+pdf("Difftest_Bowel.pdf")
+plot(b1, "edge", plot = "difference", onlyNonZero = TRUE, order = "sample")
+dev.off()
+```
+
+#Aim 2: Bridge Pathways
+```{r}
+#Identifying bridge symptoms
+library (qgraph)
+library (bootnet)
+library (networktools)
+
+data <- GlobalEpi_Master_EGBARomeDx_EXCL
+View(data)
+
+data <- rename(data, Globus=R1, Odynophagia=R4, ChestPain=R5, ChestBurn=R7, ChestPainDysphag=R8, 
+               Heartburn=R9, Dysphagia=R12, PostFull=R14, EarlySat=R16, EpigasPain=R18, EpigasPainBM=R19,
+               Nausea=R21, Vomit=R23, Regurg=R32, RegurgRetch=R34, RegurgVomit=R35, RegurgTaste=R37, Belching=R38, AbdPain=R40, PainBM=R41, PainStoolConsist=R42,
+               PainStoolFreq=R43, PainEating=R45, PainImpair=R46, BSS12=R49, Constip=R51, StrainBM=R52,
+               IncompleteBM=R53, StoolBlock=R54, StoolManip=R55, BSS67=R59, DiarrEat=R61, Urgency=R63,
+               Bloat=R65, Incont=R80, RectPain=R83)
+
+#Assign names to node
+mynames <-c("Globus",	"Odynophagia",	"ChestPain",	"ChestBurn", "ChestPainDysphag", 
+            "Heartburn", "Dysphagia", "PostFull", "EarlySat", "EpigasPain",
+            "EpigasPainBM", "Nausea", "Vomit", "Regurg", "RegurgRetch", "RegurgVomit",
+            "RegurgTaste", "Belching", "AbdPain", "PainBM",
+            "PainStoolConsist", "PainStoolFreq", "PainEating", "PainImpair", "BSS1-2",
+            "Constip", "StrainBM", "IncompleteBM", "StoolBlock", "StoolManip",
+            "BSS6-7", "DiarrEat", "Urgency", "Bloat", "Incont",
+            "RectPain")
+
+#exclude ID
+data <- GlobalEpi_Master_EGBARomeDx_EXCL[,c(2:37)]
+
+#create groups
+head(data)
+
+mygroups=list("Esophageal"=c(1:7),"GastroD"=c(8:18), "Bowel"=c(19:34), "Anorectal" = c(35:36)) 
+
+#estimate network
+mynetwork <- estimateNetwork(data, default="EBICglasso", corMethod = "cor", corArgs =
+                               list(method = "spearman", use = "pairwise.complete.obs"))
+
+#Plot network
+pdf("bridge network.pdf", width=15, height=10)
+myplot <-plot(mynetwork, layout="spring", vsize=6, border.color="black", 
+              groups=mygroups, labels=mynames, color=c('#a8e6cf', 'lightblue', 'darkseagreen1', 'lightpink'), legend.cex=.4)
+dev.off()
+
+#Constructing a partial correlation matrix
+myedges <-getWmat(mynetwork)
+write.csv(myedges, "MyNetworkEdges.csv")
+
+#Estimate bridge values for each node
+
+#Save bridge strength as text file. *** It is important to set normalize = TRUE because it adjusts for
+#unequal number of nodes in the communities. 
+#sink function allows to save output as text file. 
+#normalize=TRUE accounts for different number of nodes in different communities 
+
+sink('mybridge_strength_values.txt')
+bridge(myplot, communities=c('1','1','1','1','1','1','1',
+                             '2','2','2','2','2','2','2','2','2','2','2',
+                             '3','3','3','3','3','3','3','3','3','3',
+                             '3','3','3','3','3','3','4','4'), useCommunities = "all", 
+       normalize=TRUE, directed = NULL)
+sink()
+
+#useCommunities = c('1','2')
+
+#Assign object to the plot 
+mybridge <- bridge(myplot, communities=c('1','1','1','1','1','1','1',
+                                         '2','2','2','2','2','2','2','2','2','2','2',
+                                         '3','3','3','3','3','3','3','3','3','3',
+                                         '3','3','3','3','3','3','4','4'), useCommunities = "all", 
+                   normalize=TRUE, directed = NULL, nodes = NULL)
+
+
+#Create bridge graph
+pdf("bridgestrength.pdf", width=4)
+plot(mybridge, include="Bridge Strength")
+dev.off()
+
+#Create bridge expected influence graph
+pdf("bridgeEI.pdf", width=4)
+plot(mybridge, labels=mynames, include = "Bridge Expected Influence (1-step)")
+dev.off()
+
+#Bridge stability part 1
+caseDroppingBoot <- bootnet(mynetwork, boots=1000, type="case", 
+                            statistics=c("bridgeStrength", "bridgeExpectedInfluence"), 
+                            communities=mygroups, nCores=12)
+save(caseDroppingBoot, file="caseDroppingBoot.rData")
+load("caseDroppingBoot.rData")
+
+#get stability coefficients
+sink('stability coefficients.txt')
+corStability(caseDroppingBoot)
+sink()
+
+#Plot centrality stability
+pdf("bridgeEI_Plot.pdf", width=4)
+plot(caseDroppingBoot, labels=mynames, statistics="bridgeExpectedInfluence")
+dev.off()
+
+pdf("bridgeStrength_Plot.pdf", width=4)
+plot(caseDroppingBoot, labels=mynames, statistics="bridgeStrength")
+dev.off()
+
+#Bridge stability part 2; centraity difference
+nonParametricBoot <- bootnet(mynetwork, boots=1000, type="nonparametric", statistics=c("bridgeStrength", "bridgeExpectedInfluence"), 
+                             communities=mygroups, nCores=12)
+save(nonParametricBoot, file="nonParametricBoot.rData")
+load("nonParametricBoot.rData")
+
+#Plot centrality difference
+pdf("EI_Difference_Plot.pdf")
+plot(nonParametricBoot, statistics="bridgeExpectedInfluence", plot="difference", order="mean")
+dev.off()
+
+pdf("Strength_Difference_Plot.pdf")
+plot(nonParametricBoot, statistics="bridgeStrength", plot="difference", order="mean")
+dev.off()
+```
+
+#Aim 3: Moderation
+
+#Age 
+```{r}
+library(mgm)
+library(qgraph)
+data <- GlobalEpi_Master_EGBARomeDx_AGE[,c(2,4:39)]
+data <- na.omit(data)
+
+#Run network with a moderator being the first variable. 
+mgm_obj <- mgm(data = data,
+               type = c("g", "g", "g", "g", "g", "g", "g", "g", "g", "g", "g",
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g"),
+               level = c(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1),
+               moderators = 1,
+               lambdaSel = "EBIC",
+               lambdaGam = 0.25,
+               ruleReg = "AND")
+
+#Get all moderation effects
+mgm_obj$interactions$indicator
+
+#Display specific interaction.
+showInteraction(object = mgm_obj, int = c(1,2,8))
+
+#Display specific interaction.  
+showInteraction(object = mgm_obj, int = c(1,36,37))
+
+```
+
+#Gender
+```{r}
+#Load data and assign it to "data" object
+data <- GlobalEpi_Master_EGBARomeDx_SEX[,c(2:38)]
+data <- na.omit(data)
+
+#Run network with a moderator being the first variable. 
+mgm_obj <- mgm(data = data,
+               type = c("c", "g", "g", "g", "g", "g", "g", "g", "g", "g", "g",
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g"),
+               level = c(2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1),
+               moderators = 1,
+               lambdaSel = "EBIC",
+               lambdaGam = 0.25,
+               ruleReg = "AND")
+
+#Get all moderation effects
+mgm_obj$interactions$indicator
+
+```
+
+#BMI
+```{r}
+data <- GlobalEpi_Master_EGBARomeDx_BMI[,c(2,4:39)]
+data <- na.omit(data)
+
+#Run network with a moderator being the first variable. 
+mgm_obj <- mgm(data = data,
+               type = c("g", "g", "g", "g", "g", "g", "g", "g", "g", "g", "g",
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g"),
+               level = c(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1),
+               moderators = 1,
+               lambdaSel = "EBIC",
+               lambdaGam = 0.25,
+               ruleReg = "AND")
+
+#Get all moderation effects
+mgm_obj$interactions$indicator
+
+#Display specific interaction.  
+showInteraction(object = mgm_obj, int = c(1,31,36))
+
+```
+
+#Geographic region
+```{r}
+data <- GlobalEpi_Master_EGBARomeDx_GEO[,c(2:38)]
+data <- na.omit(data)
+
+#Run network with a moderator being the first variable. 
+mgm_obj <- mgm(data = data,
+               type = c("c", "g", "g", "g", "g", "g", "g", "g", "g", "g", "g",
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g"),
+               level = c(8, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1),
+               moderators = 1,
+               lambdaSel = "EBIC",
+               lambdaGam = 0.25,
+               ruleReg = "AND")
+
+#Get all moderation effects
+mgm_obj$interactions$indicator
+
+#Display specific interactions
+showInteraction(object = mgm_obj, int = c(1,2,8))
+showInteraction(object = mgm_obj, int = c(1,2,19))
+showInteraction(object = mgm_obj, int = c(1,4,7))
+showInteraction(object = mgm_obj, int = c(1,7,9))
+showInteraction(object = mgm_obj, int = c(1,9,19))
+showInteraction(object = mgm_obj, int = c(1,9,20))
+showInteraction(object = mgm_obj, int = c(1,9,35))
+showInteraction(object = mgm_obj, int = c(1,11,12))
+showInteraction(object = mgm_obj, int = c(1,16,17))
+showInteraction(object = mgm_obj, int = c(1,32,33))
+
+
+#Assign 8 groups to a list, g 1 throgh 8 
+l_mgm_cond <- list()
+for(g in 1:8) l_mgm_cond[[g]] <- condition(mgm_obj, values = list("1" = g))
+library(qgraph)
+v_max <- rep(NA, 8)
+for(g in 1:8) v_max[g] <- max(l_mgm_cond[[g]]$pairwise$wadj)
+par(mfrow=c(1, 3))
+
+#North America
+g <- 1
+Q1 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = "spring",
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+
+pdf("North America graph.pdf", height=10, width=10)
+Q1 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = "spring",
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+N1edges <-getWmat(Q1)
+write.csv(N1edges, "Edges North AmericA.csv")
+
+#Latin America
+g <- 2
+Q2 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+
+pdf("Latin America graph.pdf", height=10, width=10)
+Q2 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+N1edges <-getWmat(Q2)
+write.csv(N1edges, "Edges Latin America.csv")
+
+#Western Europe
+g <- 3
+Q3 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+
+pdf("West Europe graph.pdf", height=10, width=10)
+Q3 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+N1edges <-getWmat(Q3)
+write.csv(N1edges, "Edges West Europe.csv")
+
+#Eastern Europe
+g <- 4
+Q4 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+
+pdf("East Europe graph.pdf", height=10, width=10)
+Q4 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+N1edges <-getWmat(Q4)
+write.csv(N1edges, "Edges East Europe.csv")
+
+#Africa
+g <- 5
+Q5 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+
+pdf("Africa graph.pdf", height=10, width=10)
+Q5 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+N1edges <-getWmat(Q5)
+write.csv(N1edges, "Edges Africa.csv")
+
+#Middle East
+g <- 6
+Q6 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+
+pdf("Middle East graph.pdf", height=10, width=10)
+Q6 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+N1edges <-getWmat(Q6)
+write.csv(N1edges, "Edges Middle East.csv")
+
+#Asia
+g <- 7
+Q7 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+
+pdf("Asia graph.pdf", height=10, width=10)
+Q7 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+N1edges <-getWmat(Q7)
+write.csv(N1edges, "Edges Asia.csv")
+
+#Australia
+g <- 8
+Q8 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+
+pdf("Australia graph.pdf", height=10, width=10)
+Q8 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = Q1$layout,
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+N1edges <-getWmat(Q7)
+write.csv(N1edges, "Edges Australia.csv")
+
+```
+
+#Anxiety
+```{r}
+#Load data and assign it to "data" object
+data <- GlobalEpi_Psychosocial 
+data <- na.omit(data)
+
+# Ignore participants without a Rome dx
+data<-data[!(data$RomeIV_Dx == 0),]
+
+#remove ID, demog, and psych variables except PHQanxiety 
+data <- subset(data,select=-c(ID,age, AGE_CAT,sex, GEO_CAT,Esophageal_Dx, Gastroduodenal_Dx, Anorectal_Dx, Bowel_Dx, RomeIV_Dx, RomeIV_Dx_All, Org_Condition,BMI, BMI_CAT,PHQ15_1,PHQ15_2,PHQ15_3, PHQ15_4, PHQ15_5, PHQ15_6,PHQ15_7, PHQ15_8,PHQ15_9, PHQ15_10, PHQ15_11, PHQ15_12, PHQ15_13, PHQ15_14, PHQ15_15,s30,s31,s32,s33,s34,s35,s36,s37,s38,s39, PHQ4_1,PHQ4_2,PHQ4_3,PHQ4_4,PHQ4sum, PHQ12sum,PHQ15sum,GlobPhys,GlobMent,PHQ4dep))
+View(data)
+
+#reorder so anxiety column is column 1
+data<-data %>%  select(PHQ4anx, everything())
+
+#Run network with a moderator being the first variable. 
+mgm_obj <- mgm(data = data,
+               type = c("g", "g", "g", "g", "g", "g", "g", "g", "g", "g", "g",
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g"),
+               level = c(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1),
+               moderators = 1,
+               lambdaSel = "EBIC",
+               lambdaGam = 0.25,
+               ruleReg = "AND")
+
+save(mgm_obj, file="mgm_obj_anxiety.Rdata")
+
+#Get all moderation effects
+mgm_obj$interactions$indicator
+```
+
+#Depression
+```{r}
+#Load data and assign it to "data" object
+data <- GlobalEpi_Psychosocial 
+
+
+# Ignore participants without a Rome dx
+data<-data[!(data$RomeIV_Dx == 0),]
+
+#remove ID, demog, and psych variables except PHQdepression
+data <- subset(data,select=-c(ID,age, AGE_CAT,sex, GEO_CAT,Esophageal_Dx, Gastroduodenal_Dx, Anorectal_Dx, Bowel_Dx, RomeIV_Dx, RomeIV_Dx_All, Org_Condition,BMI, BMI_CAT,PHQ15_1,PHQ15_2,PHQ15_3, PHQ15_4, PHQ15_5, PHQ15_6,PHQ15_7, PHQ15_8,PHQ15_9, PHQ15_10, PHQ15_11, PHQ15_12, PHQ15_13, PHQ15_14, PHQ15_15,s30,s31,s32,s33,s34,s35,s36,s37,s38,s39, PHQ4_1,PHQ4_2,PHQ4_3,PHQ4_4,PHQ4sum, PHQ12sum,PHQ15sum,GlobPhys,GlobMent,PHQ4anx))
+View(data)
+
+#reorder so depression column is column 1
+data<-data %>%  select(PHQ4dep, everything())
+
+#Run network with a moderator being the first variable. 
+mgm_obj <- mgm(data = data,
+               type = c("g", "g", "g", "g", "g", "g", "g", "g", "g", "g", "g",
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g"),
+               level = c(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1),
+               moderators = 1,
+               lambdaSel = "EBIC",
+               lambdaGam = 0.25,
+               ruleReg = "AND")
+
+#Get all moderation effects
+mgm_obj$interactions$indicator
+```
+
+#Rome diagnosis (present/abscent)
+```{r}
+#Load data and assign it to "data" object
+data <- GlobalEpi_Master_EGBARomeDx[,c(2:38)]
+data <- na.omit(data)
+
+#Run network with a moderator being the first variable. 
+mgm_obj <- mgm(data = data,
+               type = c("c", "g", "g", "g", "g", "g", "g", "g", "g", "g", "g",
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g", "g", "g", "g", "g", 
+                        "g", "g", "g", "g", "g", "g"),
+               level = c(2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                         1, 1, 1, 1, 1, 1),
+               moderators = 1,
+               lambdaSel = "EBIC",
+               lambdaGam = 0.25,
+               ruleReg = "AND")
+
+save(mgm_obj, file="mgm_obj_dx.Rdata")
+
+#Get all moderation effects
+mgm_obj$interactions$indicator
+
+#Display specific interaction. 
+showInteraction(object = mgm_obj, int = c(1,10,32))
+#Display specific interaction. 
+showInteraction(object = mgm_obj, int = c(1,26,32))
+#Display specific interaction. 
+showInteraction(object = mgm_obj, int = c(1,28,32))
+
+#Assign 2 groups to a list
+l_mgm_cond <- list()
+for(g in 1:2) l_mgm_cond[[g]] <- condition(mgm_obj, values = list("1" = g))
+library(qgraph)
+v_max <- rep(NA, 2)
+for(g in 1:2) v_max[g] <- max(l_mgm_cond[[g]]$pairwise$wadj)
+par(mfrow=c(1, 3))
+
+g <- 1
+pdf("Moderation No Rome Dx.pdf", height=10, width=10)
+Q1 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             layout = "spring",
+             mar=c(2, 3, 8, 3),
+             maximum = max(v_max),
+             edge.labels = FALSE, 
+             fade=TRUE, labels = colnames(data))
+dev.off()
+
+pdf("Centrality No Rome Dx.pdf", width=4)
+c1 <- centralityPlot(Q1)
+dev.off()
+N1edges <-getWmat(Q1)
+write.csv(N1edges, "EdgesNoRomeDx.csv")
+
+g <- 2
+
+pdf("Moderation Rome Dx.pdf", height=10, width=10)
+Q2 <- qgraph(input = l_mgm_cond[[g]]$pairwise$wadj,
+             edge.color = l_mgm_cond[[g]]$pairwise$edgecolor,
+             mar=c(2, 3, 8, 3),
+             layout = Q1$layout,
+             maximum = max(v_max),
+             edge.labels = FALSE, labels = colnames(data))
+dev.off()
+
+pdf("Centrality Rome Dx.pdf", width=4)
+c1 <- centralityPlot(Q2)
+dev.off()
+N1edges <-getWmat(Q2)
+write.csv(N1edges, "EdgesRomeDx.csv")
+
+```
+
+#Aim 4: Network Community Analysis
+```{r}
+library(CliquePercolation) 
+library(qgraph)            
+library(Matrix) 
+library(bootnet)
+
+#Load data and assign it to "data" object
+data <- GlobalEpi_Master_EGBARomeDx_EXCL[,c(2:37)]
+
+#Estimate network
+cor <- cor(data, method="spearman")
+W <- qgraph::qgraph(cor, theme = "colorblind", graph = "glasso", layout = "spring", 
+                    sampleSize=20229)
+pdf("Network graph.pdf")
+plot <- plot(W)
+dev.off()
+
+#Save edge weights
+N1edges <-getWmat(W)
+write.csv(N1edges, "Edges.csv")
+
+thresholds <- cpThreshold(W, method = "weighted", k.range = c(3,4),
+                          I.range = c(seq(0.05, 0.2, by = .01)),
+                          threshold = c("largest.components.ratio","chi", "entropy"))
+thresholds
+
+#For k=3, value with highest ratio threshold = .07, so we are using that below to determine community distribution. 
+cpk3I.007 <- cpAlgorithm(W, k = 3, method = "weighted", I = 0.07)
+cpk3I.007
+summary(cpk3I.007)
+
+#For k=4, value with highest ratio threshold = .05, so we are using that below to determine community distribution.
+cpk3I.005 <- cpAlgorithm(W, k = 4, method = "weighted", I = 0.05)
+cpk3I.005
+summary(cpk3I.005)
+
+#Graph community network
+colored.net1 <- cpColoredGraph(W, list.of.communities = cpk3I.007$list.of.communities.labels,
+                               layout="spring", theme="colorblind",own.colors=c("lightgreen", "lightpink", "cadetblue1"))
+pdf("communities graph k=3.pdf")
+colored.net1 <- cpColoredGraph(W, list.of.communities = cpk3I.007$list.of.communities.labels,
+                               layout="spring", theme="colorblind",own.colors=c("lightgreen", "lightpink", "cadetblue1"))
+dev.off()
+
+##Code below is to change shared node coloring to match relative contribution. 
+#recreate splits for all nodes and change split of Node 4
+l_split <- list(c(1),          #split of Node 1
+                c(1),          #split of Node 2
+                c(1),          #split of Node 3
+                c(1),  #split of Node 4
+                c(1),          #split of Node 5
+                c(.63, .37),          #split of Node 6
+                c(.72, .28),          #split of Node 7
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(.43, .57),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(.45, .55),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(.85, .15),
+                c(1),
+                c(1),
+                c(.38, .34, .27),
+                c(.59, .41),
+                c(.44, .56)) 
+#extract colors for all nodes from cpColoredGraph object
+l_color <- colored.net1$colors.nodes
+
+#create adapted plot
+qgraph::qgraph(qgraph::getWmat(W), pie = l_split, pieColor = l_color, pieBorder = 1,
+               layout="spring", theme="colorblind")
+
+pdf("communities_corrected k=3.pdf")
+graph <- qgraph::qgraph(qgraph::getWmat(W), pie = l_split, pieColor = l_color, pieBorder = 1,
+               layout="spring", theme="colorblind")
+dev.off()
+
+```
+
